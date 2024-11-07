@@ -1,5 +1,10 @@
-MANAGER_DNS=ec2-54-227-44-45.compute-1.amazonaws.com
-WORKER_DNS=("ec2-34-207-114-158.compute-1.amazonaws.com" "ec2-3-91-30-88.compute-1.amazonaws.com" )
-PROXY_DNS=ec2-98-81-228-153.compute-1.amazonaws.com
-GATEKEEPER_DNS=ec2-107-20-129-215.compute-1.amazonaws.com
-TRUSTED_HOST_DNS=ec2-54-224-39-71.compute-1.amazonaws.com
+MANAGER_IP=54.196.170.121
+MANAGER_DNS=ec2-54-196-170-121.compute-1.amazonaws.com
+WORKER_IPS=(3.91.219.134 54.226.59.182)
+WORKER_DNS=("ec2-3-91-219-134.compute-1.amazonaws.com" "ec2-54-226-59-182.compute-1.amazonaws.com" )
+PROXY_IP=204.236.194.96
+PROXY_DNS=ec2-204-236-194-96.compute-1.amazonaws.com
+GATEKEEPER_IP=52.90.171.246
+GATEKEEPER_DNS=ec2-52-90-171-246.compute-1.amazonaws.com
+TRUSTED_HOST_IP=107.21.67.215
+TRUSTED_HOST_DNS=ec2-107-21-67-215.compute-1.amazonaws.com
