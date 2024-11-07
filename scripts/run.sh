@@ -49,7 +49,7 @@ function check_ssh() {
   local ip=$1
   for i in {1..15}; do
     echo "Attempting to connect to instance $ip (attempt $i)..."
-    if ssh -o StrictHostKeyChecking=no -i ../infrastructure/my_terraform_key ubuntu@$ip 'echo SSH connection successful'; then
+    if ssh -o StrictHostKeyChecking=no -i ~/ssh_keys/my_terraform_key ubuntu@$ip 'echo SSH connection successful'; then
       echo "Instance $ip is reachable."
       return 0
     else

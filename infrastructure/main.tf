@@ -22,7 +22,7 @@ data "aws_vpc" "default" {
 
 resource "aws_key_pair" "key_pair_name" {
   key_name   = var.key_pair_name
-  public_key = file("my_terraform_key.pub")
+  public_key = file("${path.module}/../ssh_keys/my_terraform_key.pub")
 }
 
 # Security group for Gatekeeper with HTTP only
