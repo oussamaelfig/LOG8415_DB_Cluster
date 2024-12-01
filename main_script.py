@@ -11,44 +11,43 @@ import time
 import botocore.exceptions
 import logging
 
-# Initialize clients
+# Initialize AWS clients
 ec2_client = boto3.client('ec2', region_name='us-east-1')
 s3_client = boto3.client('s3', region_name='us-east-1')
 
-# Get the AWS key pair
-def get_key_pair(ec2_client):
+# Key pair management
+def retrieve_key_pair(ec2_client):
     """
-        Retrieve the key pair
+        Ensure the existence of an AWS key pair.
         Args:
             ec2_client: The boto3 ec2 client
         Returns:
             Key name
         """
-    key_name = "tp3"
+    key_pair_name = "tp3"
     try:
-        ec2_client.describe_key_pairs(KeyNames=[key_name])
-        print(f"Key Pair {key_name} already exists. Using the existing key.")
-        return key_name
+        ec2_client.describe_key_pairs(KeyNames=[key_pair_name])
+        print(f"Key Pair {key_pair_name} already exists. Using the existing key.")
+        return key_pair_name
 
     except ClientError as e:
         if 'InvalidKeyPair.NotFound' in str(e):
             try:
                 # Create a key pair if it doesnt exist
-                response = ec2_client.create_key_pair(KeyName=key_name)
+                response = ec2_client.create_key_pair(KeyName=key_pair_name)
                 private_key = response['KeyMaterial']
 
                 # Save the key to a temporary directory
-                save_directory = os.path.join(os.getcwd(), 'keys')  # Save in a local 'keys' folder
-                os.makedirs(save_directory, exist_ok=True)  # Create the folder if it doesn't exist
-                key_file_path = os.path.join(save_directory, f"{key_name}.pem")
-
+                save_directory = os.path.join(os.getcwd(), 'keys')
+                os.makedirs(save_directory, exist_ok=True)
+                key_file_path = os.path.join(save_directory, f"{key_pair_name}.pem")
                 with open(key_file_path, 'w') as file:
                     file.write(private_key)
 
                 os.chmod(key_file_path, 0o400)
-                print(f"Created and using Key Pair: {key_name}")
+                print(f"Created and using Key Pair: {key_pair_name}")
                 print(f"Key saved at: {key_file_path}")
-                return key_name
+                return key_pair_name
             except ClientError as e:
                 print(f"Error creating key pair: {e}")
                 sys.exit(1)
@@ -56,10 +55,10 @@ def get_key_pair(ec2_client):
             print(f"Error retrieving key pairs: {e}")
             sys.exit(1)
 
-# Get the AWS VPC            
-def get_vpc_id(ec2_client):
+# Retrieve VPC           
+def retrieve_vpc_id(ec2_client):
     """
-        Function to get VPC id
+        Fetch the VPC ID
         Args:
             ec2_client: The boto3 ec2 client
         Returns:
@@ -73,28 +72,25 @@ def get_vpc_id(ec2_client):
             print("Error: No VPCs found.")
             sys.exit(1)
         print(f"Using VPC ID: {vpcs[0]['VpcId']}")
-        # Take the first one
         return vpcs[0]['VpcId']
 
     except ClientError as e:
         print(f"Error retrieving VPCs: {e}")
         sys.exit(1)
 
-# Create the AWS Security Group
+# Create or reuse security group
 def create_security_group(ec2_client, vpc_id, description="My Security Group"):
     """
-    Create or reuse a security group with valid inbound rules.
+    Create or reuse a security group with defined inbound rules.
     Args:
         ec2_client: The boto3 ec2 client.
         vpc_id: VPC id.
         description: Description for security group.
     Returns:
-        Security group id.
+        str: Security group ID
     """
-    group_name = "my-security-group"
+    security_group_name = "custom-security-group"
     inbound_rules = [
-        #{'protocol': 'tcp', 'port_range': 8000, 'source': '0.0.0.0/0'},
-        #{'protocol': 'tcp', 'port_range': 8001, 'source': '0.0.0.0/0'},
         {'protocol': 'tcp', 'port_range': 5000, 'source': '0.0.0.0/0'},
         {'protocol': 'tcp', 'port_range': 5001, 'source': '0.0.0.0/0'},
         {'protocol': 'tcp', 'port_range': 22, 'source': '0.0.0.0/0'},
@@ -106,7 +102,7 @@ def create_security_group(ec2_client, vpc_id, description="My Security Group"):
         # Check if the security group already exists
         response = ec2_client.describe_security_groups(
             Filters=[
-                {'Name': 'group-name', 'Values': [group_name]},
+                {'Name': 'group-name', 'Values': [security_group_name]},
                 {'Name': 'vpc-id', 'Values': [vpc_id]}
             ]
         )
@@ -116,9 +112,9 @@ def create_security_group(ec2_client, vpc_id, description="My Security Group"):
             return security_group_id
 
         # If the security group doesn't exist, create a new one
-        print(f"Creating security group {group_name} in VPC ID: {vpc_id}")
+        print(f"Creating security group {security_group_name} in VPC ID: {vpc_id}")
         response = ec2_client.create_security_group(
-            GroupName=group_name,
+            GroupName=security_group_name,
             Description=description,
             VpcId=vpc_id
         )
@@ -145,15 +141,15 @@ def create_security_group(ec2_client, vpc_id, description="My Security Group"):
 
     except ClientError as e:
         if 'InvalidPermission.Duplicate' in str(e):
-            print(f"Ingress rule already exists for Security Group: {group_name}")
+            print(f"Ingress rule already exists for Security Group: {security_group_name}")
         else:
             print(f"Error adding ingress rules: {e}")
         return None
 
 # Get the subnet
-def get_subnet(ec2_client, vpc_id):
+def retrieve_subnet_id(ec2_client, vpc_id):
     """
-    Function to get 2 Subnet ID
+    Fetch a Subnet ID within a VPC
     Args:
         ec2_client: The boto3 ec2 client
         vpc_id: VPC id
@@ -181,7 +177,7 @@ def get_subnet(ec2_client, vpc_id):
         sys.exit(1)
 
 # Set up the mysql clusters
-def setup_manager(ec2_client, key_name, sg_id, subnet_id):
+def setup_manager(ec2_client, key_pair_name, sg_id, subnet_id):
     instance_type = 't2.micro'
     ami_id = 'ami-0e86e20dae9224db8'
 
@@ -189,18 +185,18 @@ def setup_manager(ec2_client, key_name, sg_id, subnet_id):
     user_data_script = '''#!/bin/bash
     exec > /var/log/user-data.log 2>&1
     set -x
-    # Actualiza el sistema e instala dependencias
+    # Updates the system and installs dependencies
     sudo apt update -y
     sudo apt install -y mysql-server wget python3-pip python3-venv
 
-    # Crea un entorno virtual para las dependencias de Python
+    # Create a virtual environment for Python dependencies
     python3 -m venv /home/ubuntu/myenv
     source /home/ubuntu/myenv/bin/activate
 
-    # Instala FastAPI, Uvicorn y el conector de MySQL en el entorno virtual
+    # Install FastAPI, Uvicorn, and MySQL connector in the virtual environment
     pip install fastapi uvicorn mysql-connector-python
 
-    # Configuración de MySQL
+    # MySQL configuration
     sudo sed -i '/\[mysqld\]/a server-id=1' /etc/mysql/mysql.conf.d/mysqld.cnf
     sudo sed -i '/\[mysqld\]/a gtid_mode=ON' /etc/mysql/mysql.conf.d/mysqld.cnf
     sudo sed -i '/\[mysqld\]/a enforce_gtid_consistency=ON' /etc/mysql/mysql.conf.d/mysqld.cnf
@@ -209,13 +205,13 @@ def setup_manager(ec2_client, key_name, sg_id, subnet_id):
     sudo sed -i 's/^bind-address\s*=.*$/bind-address = 0.0.0.0/' /etc/mysql/mysql.conf.d/mysqld.cnf
     sudo systemctl restart mysql
 
-    # Carga la base de datos Sakila
+    # Load the Sakila database
     wget https://downloads.mysql.com/docs/sakila-db.tar.gz
     tar -xvf sakila-db.tar.gz
     sudo mysql < sakila-db/sakila-schema.sql
     sudo mysql < sakila-db/sakila-data.sql
 
-    # Crea y configura el usuario 'api_user' para conectarse a MySQL
+    # Create and configure the 'api_user' for MySQL connection
     sudo mysql -e "CREATE USER 'api_user'@'localhost' IDENTIFIED BY 'api_password';"
     sudo mysql -e "GRANT ALL PRIVILEGES ON sakila.* TO 'api_user'@'localhost';"
     sudo mysql -e "FLUSH PRIVILEGES;"
@@ -229,7 +225,7 @@ def setup_manager(ec2_client, key_name, sg_id, subnet_id):
     sudo mysql -e "ALTER USER 'repl'@'%' IDENTIFIED WITH mysql_native_password BY 'replica_password';"
     sudo mysql -e "FLUSH PRIVILEGES;"
 
-    # Crea el archivo de la aplicación FastAPI
+    # Create the FastAPI application file
     cat <<EOF > /home/ubuntu/app.py
 from fastapi import FastAPI
 import mysql.connector
@@ -264,11 +260,11 @@ EOF
 
     source /home/ubuntu/myenv/bin/activate
 
-    # Cambia los permisos del archivo para garantizar su ejecución
+    # Change the file permissions to ensure its execution
     chown ubuntu:ubuntu /home/ubuntu/app.py
     chmod 755 /home/ubuntu/app.py
 
-    # Ejecuta la aplicación FastAPI con Uvicorn en el entorno virtual
+    # Run FastAPI application with Uvicorn in virtual environment
     cd /home/ubuntu && nohup /home/ubuntu/myenv/bin/uvicorn app:app --host 0.0.0.0 --port 8000 --reload &
     chmod +x /home/ubuntu/app.py
     pip install fastapi uvicorn mysql-connector-python
@@ -279,7 +275,7 @@ EOF
     instance = ec2_client.run_instances(
         ImageId=ami_id,
         InstanceType=instance_type,
-        KeyName=key_name,
+        KeyName=key_pair_name,
         SecurityGroupIds=[sg_id],
         SubnetId=subnet_id,
         MinCount=1,
@@ -307,7 +303,7 @@ EOF
 
     return manager_instance_id, manager_private_ip
 
-def setup_worker(ec2_client, key_name, sg_id, subnet_id, manager_private_ip, worker_name, server_id):
+def setup_worker(ec2_client, key_pair_name, sg_id, subnet_id, manager_private_ip, worker_name, server_id):
     instance_type = 't2.micro'
     ami_id = 'ami-0e86e20dae9224db8'
 
@@ -395,7 +391,7 @@ EOF
     chown ubuntu:ubuntu /home/ubuntu/app.py
     chmod 755 /home/ubuntu/app.py
 
-    # Ejecuta la aplicación FastAPI con Uvicorn en el entorno virtual
+    # Run FastAPI application with Uvicorn in virtual environment
     cd /home/ubuntu && nohup /home/ubuntu/myenv/bin/uvicorn app:app --host 0.0.0.0 --port 8000 --reload &
     chmod +x /home/ubuntu/app.py
     pip install fastapi uvicorn mysql-connector-python
@@ -407,7 +403,7 @@ EOF
     instance = ec2_client.run_instances(
         ImageId=ami_id,
         InstanceType=instance_type,
-        KeyName=key_name,
+        KeyName=key_pair_name,
         SecurityGroupIds=[sg_id],
         SubnetId=subnet_id,
         MinCount=1,
@@ -435,20 +431,20 @@ EOF
 
     return worker_instance_id
 
-def setup_mysql_cluster(ec2_client, key_name, sg_id, subnet_id):
+def setup_mysql_cluster(ec2_client, key_pair_name, sg_id, subnet_id):
     # Create the manager
-    manager_instance_id, manager_private_ip = setup_manager(ec2_client, key_name, sg_id, subnet_id)
+    manager_instance_id, manager_private_ip = setup_manager(ec2_client, key_pair_name, sg_id, subnet_id)
 
     # Create workers and pass the manager's IP
     worker_instance_ids = []
     for i, worker_name in enumerate(['worker1', 'worker2'], start=2):  # Starting server-id from 2 for worker1
-        worker_instance_id = setup_worker(ec2_client, key_name, sg_id, subnet_id, manager_private_ip, worker_name, i)
+        worker_instance_id = setup_worker(ec2_client, key_pair_name, sg_id, subnet_id, manager_private_ip, worker_name, i)
         worker_instance_ids.append(worker_instance_id)
 
     return manager_instance_id, worker_instance_ids
 
 # Set up the proxy
-def setup_proxy(ec2_client, key_name, sg_id, subnet_id, manager_ip, worker_ips):
+def setup_proxy(ec2_client, key_pair_name, sg_id, subnet_id, manager_ip, worker_ips):
     user_data_script_proxy = f'''#!/bin/bash
     sudo apt update -y
     sudo apt install -y python3-pip python3.12-venv python3-setuptools
@@ -471,7 +467,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
-# Modelo Item
+# Model for Item
 class Item(BaseModel):
     column1: str
     column2: str
@@ -538,7 +534,7 @@ EOF
     proxy_instance = ec2_client.run_instances(
         InstanceType='t2.large',
         ImageId=ami_id,
-        KeyName=key_name,
+        KeyName=key_pair_name,
         SecurityGroupIds=[sg_id],
         SubnetId=subnet_id,
         MinCount=1,
@@ -594,12 +590,12 @@ def get_private_ip(instance_id):
     raise Exception(f"Unable to retrieve private IP for instance {instance_id} after {retries} retries.")
 
 # Set up the gatekeeper
-def setup_gatekeeper(ec2_client, key_name, public_sg_id, private_sg_id, subnet_id, proxy_ip):
+def setup_gatekeeper(ec2_client, key_pair_name, public_sg_id, private_sg_id, subnet_id, proxy_ip):
     """
     Deploy the Gatekeeper and Trusted Host instances and configure them with FastAPI to securely handle requests.
     Args:
         ec2_client: The boto3 EC2 client.
-        key_name: Key pair name to SSH into the instance.
+        key_pair_name: Key pair name to SSH into the instance.
         sg_id: Security group ID.
         subnet_id: Subnet ID.
         proxy_ip: Public IP of the Proxy instance to which Trusted Host will forward requests.
@@ -688,7 +684,7 @@ EOF
 
     trusted_host_instance = ec2_client.run_instances(
         InstanceType='t2.large',
-        KeyName=key_name,
+        KeyName=key_pair_name,
         ImageId=ami_id,
         SecurityGroupIds=[private_sg_id],
         SubnetId=subnet_id,
@@ -728,7 +724,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
-# Modelo Item
+# Model for Item
 class Item(BaseModel):
     column1: str
     column2: str
@@ -787,7 +783,7 @@ EOF
 
     gatekeeper_instance = ec2_client.run_instances(
         InstanceType='t2.large',
-        KeyName=key_name,
+        KeyName=key_pair_name,
         ImageId=ami_id,
         SecurityGroupIds=[public_sg_id],
         SubnetId=subnet_id,
@@ -873,7 +869,7 @@ def create_public_security_group(ec2_client, vpc_id, description="Public Securit
     Returns:
         Security group ID.
     """
-    group_name = "public-security-group"
+    security_group_name = "public-security-group"
     inbound_rules = [
         {'protocol': 'tcp', 'port_range': 22, 'source': '0.0.0.0/0'},  # SSH
         {'protocol': 'tcp', 'port_range': 80, 'source': '0.0.0.0/0'},  # HTTP
@@ -885,7 +881,7 @@ def create_public_security_group(ec2_client, vpc_id, description="Public Securit
         # Check if the security group already exists
         response = ec2_client.describe_security_groups(
             Filters=[
-                {'Name': 'group-name', 'Values': [group_name]},
+                {'Name': 'group-name', 'Values': [security_group_name]},
                 {'Name': 'vpc-id', 'Values': [vpc_id]}
             ]
         )
@@ -895,9 +891,9 @@ def create_public_security_group(ec2_client, vpc_id, description="Public Securit
             return security_group_id
 
         # Create the security group
-        print(f"Creating security group {group_name} in VPC ID: {vpc_id}")
+        print(f"Creating security group {security_group_name} in VPC ID: {vpc_id}")
         response = ec2_client.create_security_group(
-            GroupName=group_name,
+            GroupName=security_group_name,
             Description=description,
             VpcId=vpc_id
         )
@@ -936,13 +932,13 @@ def create_private_security_group(ec2_client, vpc_id, public_security_group_id, 
     Returns:
         Security group ID.
     """
-    group_name = "private-security-group"
+    security_group_name = "private-security-group"
 
     try:
         # Check if the security group already exists
         response = ec2_client.describe_security_groups(
             Filters=[
-                {'Name': 'group-name', 'Values': [group_name]},
+                {'Name': 'group-name', 'Values': [security_group_name]},
                 {'Name': 'vpc-id', 'Values': [vpc_id]}
             ]
         )
@@ -952,9 +948,9 @@ def create_private_security_group(ec2_client, vpc_id, public_security_group_id, 
             return security_group_id
 
         # Create the security group
-        print(f"Creating security group {group_name} in VPC ID: {vpc_id}")
+        print(f"Creating security group {security_group_name} in VPC ID: {vpc_id}")
         response = ec2_client.create_security_group(
-            GroupName=group_name,
+            GroupName=security_group_name,
             Description=description,
             VpcId=vpc_id
         )
@@ -976,10 +972,10 @@ def create_private_security_group(ec2_client, vpc_id, public_security_group_id, 
                 'UserIdGroupPairs': [{'GroupId': security_group_id}]  # Self-reference for private communication
             },
             {
-                'IpProtocol': '-1',  # -1 representa "All traffic" (todos los protocolos)
+                'IpProtocol': '-1',  # -1 represents "All traffic" (all protocols)
                 'FromPort': 0,
-                'ToPort': 65535,  # Permite todos los puertos (de 0 a 65535)
-                'UserIdGroupPairs': [{'GroupId': security_group_id}]  # Referencia al grupo de seguridad de origen
+                'ToPort': 65535,  # Allows all ports (from 0 to 65535)
+                'UserIdGroupPairs': [{'GroupId': security_group_id}]  # Reference to the originating security group
             }
         ]
 
@@ -1010,28 +1006,28 @@ def save_instance_ids(manager_id, worker_ids):
 
 def main():
     # Step 1: Key pair setup
-    key_name = get_key_pair(ec2_client)
+    key_pair_name = retrieve_key_pair(ec2_client)
 
     # Step 2: Retrieve VPC and subnet
-    vpc_id = get_vpc_id(ec2_client)
-    subnet_id = get_subnet(ec2_client, vpc_id)
+    vpc_id = retrieve_vpc_id(ec2_client)
+    subnet_id = retrieve_subnet_id(ec2_client, vpc_id)
 
     # Step 3: Security Group creation
     public_sg_id = create_public_security_group(ec2_client, vpc_id)
     private_sg_id = create_private_security_group(ec2_client, vpc_id, public_sg_id)
 
     # Step 4: Deploy MySQL instances (manager + 2 workers)
-    manager_instance_id, worker_instance_ids = setup_mysql_cluster(ec2_client, key_name, private_sg_id, subnet_id)
+    manager_instance_id, worker_instance_ids = setup_mysql_cluster(ec2_client, key_pair_name, private_sg_id, subnet_id)
     save_instance_ids(manager_instance_id, worker_instance_ids)
 
     # Step 5: Set up the proxy instance and configure load balancing
     manager_ip = get_private_ip(manager_instance_id)
     worker_ips = [get_private_ip(worker_id) for worker_id in worker_instance_ids]
-    proxy_instance_id = setup_proxy(ec2_client, key_name, private_sg_id, subnet_id, manager_ip, worker_ips)
+    proxy_instance_id = setup_proxy(ec2_client, key_pair_name, private_sg_id, subnet_id, manager_ip, worker_ips)
 
     # Step 6: Set up the gatekeeper pattern
     proxy_ip = get_private_ip(proxy_instance_id)
-    gatekeeper_instance_id, trusted_host_id = setup_gatekeeper(ec2_client, key_name, public_sg_id, private_sg_id, subnet_id, proxy_ip)
+    gatekeeper_instance_id, trusted_host_id = setup_gatekeeper(ec2_client, key_pair_name, public_sg_id, private_sg_id, subnet_id, proxy_ip)
 
     # Step 7: Send benchmarking requests
     time.sleep(120)
