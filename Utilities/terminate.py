@@ -24,7 +24,6 @@ def remove_key_file():
     """
     Function to remove key file
     """
-    # Get path of key file
     key_file_path = os.path.expanduser("~/.aws/tp2.pem")
 
     try:

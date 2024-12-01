@@ -806,7 +806,7 @@ EOF
     return gatekeeper_instance_id, trusted_host_instance_id
 
 # Set up logging configuration
-logging.basicConfig(filename='benchmark_log.txt', level=logging.INFO, 
+logging.basicConfig(filename='Utilities\\benchmark_log.txtbenchmark_log.txt', level=logging.INFO, 
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Benchmarking
@@ -858,7 +858,6 @@ def benchmark_cluster(gatekeeper_ip):
         except requests.exceptions.RequestException as e:
             logging.error(f"write error - column1={column1}, column2={column2}, error={str(e)}")
 
-# Security group for the Gatekeeper
 def create_public_security_group(ec2_client, vpc_id, description="Public Security Group"):
     """
     Create or reuse a security group that allows public access (e.g., SSH, HTTP).
@@ -878,7 +877,6 @@ def create_public_security_group(ec2_client, vpc_id, description="Public Securit
     ]
 
     try:
-        # Check if the security group already exists
         response = ec2_client.describe_security_groups(
             Filters=[
                 {'Name': 'group-name', 'Values': [security_group_name]},
@@ -890,7 +888,6 @@ def create_public_security_group(ec2_client, vpc_id, description="Public Securit
             print(f"Using existing Public Security Group ID: {security_group_id}")
             return security_group_id
 
-        # Create the security group
         print(f"Creating security group {security_group_name} in VPC ID: {vpc_id}")
         response = ec2_client.create_security_group(
             GroupName=security_group_name,
@@ -900,7 +897,6 @@ def create_public_security_group(ec2_client, vpc_id, description="Public Securit
         security_group_id = response['GroupId']
         print(f"Created Public Security Group ID: {security_group_id}")
 
-        # Set inbound rules
         ip_permissions = []
         for rule in inbound_rules:
             permission = {'IpProtocol': rule['protocol'], 'IpRanges': [{'CidrIp': rule['source']}]}
@@ -920,7 +916,6 @@ def create_public_security_group(ec2_client, vpc_id, description="Public Securit
         print(f"Error creating Public Security Group: {e}")
         return None
 
-# Security group for all the private instances
 def create_private_security_group(ec2_client, vpc_id, public_security_group_id, description="Private Security Group"):
     """
     Create or reuse a security group that allows private access only.
@@ -935,7 +930,6 @@ def create_private_security_group(ec2_client, vpc_id, public_security_group_id, 
     security_group_name = "private-security-group"
 
     try:
-        # Check if the security group already exists
         response = ec2_client.describe_security_groups(
             Filters=[
                 {'Name': 'group-name', 'Values': [security_group_name]},
@@ -947,7 +941,6 @@ def create_private_security_group(ec2_client, vpc_id, public_security_group_id, 
             print(f"Using existing Private Security Group ID: {security_group_id}")
             return security_group_id
 
-        # Create the security group
         print(f"Creating security group {security_group_name} in VPC ID: {vpc_id}")
         response = ec2_client.create_security_group(
             GroupName=security_group_name,
@@ -979,7 +972,6 @@ def create_private_security_group(ec2_client, vpc_id, public_security_group_id, 
             }
         ]
 
-        # Add inbound rules
         ec2_client.authorize_security_group_ingress(
             GroupId=security_group_id,
             IpPermissions=ip_permissions
@@ -991,10 +983,8 @@ def create_private_security_group(ec2_client, vpc_id, public_security_group_id, 
         print(f"Error creating Private Security Group: {e}")
         return None
         
-# File with the IDs of the instances
-INSTANCE_FILE = "instance_ids.json"
+INSTANCE_FILE = "Utilities\instance_ids.json"
 
-# Save the IDs of the instances in the file
 def save_instance_ids(manager_id, worker_ids):
     data = {
         "manager_id": manager_id,
@@ -1005,31 +995,24 @@ def save_instance_ids(manager_id, worker_ids):
     print(f"Instance IDs saved to {INSTANCE_FILE}")
 
 def main():
-    # Step 1: Key pair setup
     key_pair_name = retrieve_key_pair(ec2_client)
 
-    # Step 2: Retrieve VPC and subnet
     vpc_id = retrieve_vpc_id(ec2_client)
     subnet_id = retrieve_subnet_id(ec2_client, vpc_id)
 
-    # Step 3: Security Group creation
     public_sg_id = create_public_security_group(ec2_client, vpc_id)
     private_sg_id = create_private_security_group(ec2_client, vpc_id, public_sg_id)
 
-    # Step 4: Deploy MySQL instances (manager + 2 workers)
     manager_instance_id, worker_instance_ids = setup_mysql_cluster(ec2_client, key_pair_name, private_sg_id, subnet_id)
     save_instance_ids(manager_instance_id, worker_instance_ids)
 
-    # Step 5: Set up the proxy instance and configure load balancing
     manager_ip = get_private_ip(manager_instance_id)
     worker_ips = [get_private_ip(worker_id) for worker_id in worker_instance_ids]
     proxy_instance_id = setup_proxy(ec2_client, key_pair_name, private_sg_id, subnet_id, manager_ip, worker_ips)
 
-    # Step 6: Set up the gatekeeper pattern
     proxy_ip = get_private_ip(proxy_instance_id)
     gatekeeper_instance_id, trusted_host_id = setup_gatekeeper(ec2_client, key_pair_name, public_sg_id, private_sg_id, subnet_id, proxy_ip)
 
-    # Step 7: Send benchmarking requests
     time.sleep(120)
     gatekeeper_ip = get_public_ip(gatekeeper_instance_id)
     benchmark_cluster(gatekeeper_ip)
